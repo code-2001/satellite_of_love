@@ -294,7 +294,7 @@ def train_net(train_image_db, train_set_size=6400, val_set_size=1000, num_epochs
             x_trn, y_trn = train_gen_db.get_random_patchs(gen_batch_size, ISZ)
             yield x_trn, y_trn
 
-    local_batch_size = 16  # was 64
+    local_batch_size = 64  # was 64
     samples_per_epoch = train_set_size
 
     print('compiling model...')
@@ -433,15 +433,15 @@ if __name__ == '__main__':
     # build_and_display_thumbs_from_image_matrix(p_y[:, 0:3, :, :])
 
     if do_training:
-        model = train_net(image_db, train_set_size=64*5, val_set_size=50, num_epochs=1)
-        img_val, msk_val = image_db.get_random_patchs(50, ISZ)
+        model = train_net(image_db, train_set_size=64*200, val_set_size=5000, num_epochs=25)
+        img_val, msk_val = image_db.get_random_patchs(5000, ISZ)
         score, trs = jaccard_tools.calc_jaccard(model, img_val, msk_val)
     else:
         print('loading model')
         model = get_unet()
         model.load_weights(config.glb_base_dir + '/weights/unet_tmp.hdf5')
         if generate_jaccard:
-            img_val, msk_val = image_db.get_random_patchs(50, ISZ)
+            img_val, msk_val = image_db.get_random_patchs(5000, ISZ)
             score, trs = jaccard_tools.calc_jaccard(model, img_val, msk_val)
             print('saving thresholds and score')
             pickle.dump(trs, open(config.glb_base_dir + '/weights/thresh.pickle', 'wb'))
@@ -459,4 +459,4 @@ if __name__ == '__main__':
         make_submission_file_from_masks(mask_dir_name, sub_file_name=config.glb_base_dir + '/subm/sub_new_v0.csv')
 
     # bonus
-    check_predict('6100_0_2', 3, model, trs, IMAGE_MIN_SIZE)
+    check_predict('6100_0_2', 3, model, trs, IMAGE_SF)
