@@ -1,6 +1,6 @@
 """
     Main Satellite training a testing code.
-    ver 0.0.6x
+    ver 0.0.7x
 """
 import matplotlib.pyplot as plt
 import pandas as pd
