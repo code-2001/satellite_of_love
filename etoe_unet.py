@@ -1,6 +1,6 @@
 """
     Main Satellite training a testing code.
-    ver 0.0.7x
+    version: submission for sub_ep25_train12800_val5000_algoFitGen_autoscaleTo960via160x6.csv
 """
 import matplotlib.pyplot as plt
 import pandas as pd
