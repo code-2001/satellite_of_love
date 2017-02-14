@@ -408,7 +408,7 @@ if __name__ == '__main__':
     generate_jaccard = True
     display_training_data = False
 
-    print('Begin v0.0.19')
+    print('Begin v0.0.20')
 
     if build_train_db:
         image_db = TrainingDB()
