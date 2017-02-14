@@ -407,7 +407,7 @@ def check_predict(image_id, feature_id, pred_model, thresh, img_resize):
 
 if __name__ == '__main__':
     build_train_db = True
-    do_training = False
+    do_training = True
     build_masks_and_submissions = True
     generate_jaccard = True
     display_training_data = False
