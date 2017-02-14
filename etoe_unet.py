@@ -21,7 +21,7 @@ import image_source
 import polygon_tools
 
 N_Cls = 10
-ISZ = 160  # unet input size
+ISZ = 320  # unet input size, 160 baseline
 
 DF = pd.read_csv(config.glb_base_dir + '/train_wkt_v4.csv')
 GS = pd.read_csv(config.glb_base_dir + '/grid_sizes.csv', names=['ImageId', 'Xmax', 'Ymin'], skiprows=1)
@@ -48,7 +48,7 @@ class TrainingDB:
     def build_training_db(self, image_sf, train_image_ids, num_class):
         train_image_list = []
         train_mask_list = []
-        for idx in train_image_ids:
+        for i, idx in enumerate(train_image_ids):
             # get images for this image id
             img_mat = image_source.get_image_from_id(idx, image_sf)
             img_mat = image_source.stretch_n(img_mat)
@@ -58,7 +58,7 @@ class TrainingDB:
                 image_mask[:, :, z] = polygon_tools.generate_mask_for_image_and_class(
                     (img_mat.shape[0], img_mat.shape[1]), idx, z + 1, GS, DF)
             train_mask_list.append(image_mask)
-            print(idx, img_mat.shape, image_mask.shape)
+            print('{}/{}'.format(i+1, len(train_image_ids)), idx, 'shapes:', img_mat.shape, image_mask.shape)
         self.x = train_image_list
         self.y = train_mask_list
 
@@ -176,7 +176,7 @@ def build_and_display_thumbs_from_image_list(image_list: []):
     plt.show()
 
 
-def get_unet():
+def get_unet_160():
     inputs = Input((IMAGE_DEPTH, ISZ, ISZ))
 
     conv1 = Convolution2D(32, 3, 3, activation='relu', border_mode='same')(inputs)
@@ -222,7 +222,7 @@ def get_unet():
     return unet_model
 
 
-def get_unet_320():
+def get_unet():
     inputs = Input((IMAGE_DEPTH, ISZ, ISZ))
 
     conv1 = Convolution2D(32, 3, 3, activation='relu', border_mode='same')(inputs)
@@ -286,27 +286,26 @@ def get_scalers(im_size, x_max, y_min):
     return w_ / x_max, h_ / y_min
 
 
-def train_net(train_image_db, train_set_size=6400, val_set_size=1000, num_epochs=1):
-    print('*** start train net, with', num_epochs, 'epochs with', train_set_size, 'samples per epoch')
+def train_net(train_image_db, train_set_size=6400, val_set_size=1000, num_epochs=1, train_batch_size=64):
 
     def fit_train_data_generator(train_gen_db, gen_batch_size):
         while True:
             x_trn, y_trn = train_gen_db.get_random_patchs(gen_batch_size, ISZ)
             yield x_trn, y_trn
 
-    local_batch_size = 64  # was 64
-    samples_per_epoch = train_set_size
+    print('*** train_net: using', num_epochs, 'epochs with', train_set_size, 'samples per epoch',
+          'training size', train_set_size, 'valadiation set size', val_set_size, 'number of epochs', num_epochs,
+          'batch size', train_batch_size)
 
-    print('compiling model...')
     train_model = get_unet()
-    print('complete.')
+
     model_checkpoint = ModelCheckpoint(config.glb_base_dir + '/weights/unet_tmp.hdf5',
                                        monitor='loss', save_best_only=True)
-
-    train_model.fit_generator(fit_train_data_generator(train_image_db, local_batch_size),
-                              samples_per_epoch=samples_per_epoch, nb_epoch=num_epochs,
+    print('begin fit_generator...')
+    train_model.fit_generator(fit_train_data_generator(train_image_db, train_batch_size),
+                              samples_per_epoch=train_set_size, nb_epoch=num_epochs,
                               callbacks=[model_checkpoint], verbose=1,
-                              validation_data=fit_train_data_generator(train_image_db, local_batch_size),
+                              validation_data=fit_train_data_generator(train_image_db, train_batch_size),
                               nb_val_samples=val_set_size)
 
     print('train_net model complete.')
@@ -433,7 +432,7 @@ if __name__ == '__main__':
     # build_and_display_thumbs_from_image_matrix(p_y[:, 0:3, :, :])
 
     if do_training:
-        model = train_net(image_db, train_set_size=64*200, val_set_size=5000, num_epochs=25)
+        model = train_net(image_db, train_set_size=64*200, val_set_size=5000, num_epochs=30, train_batch_size=16)
         img_val, msk_val = image_db.get_random_patchs(5000, ISZ)
         score, trs = jaccard_tools.calc_jaccard(model, img_val, msk_val)
     else:
