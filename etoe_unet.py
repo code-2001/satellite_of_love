@@ -17,7 +17,7 @@ import image_source
 import polygon_tools
 
 N_Cls = 10
-ISZ = 160*2  # unet input size
+ISZ = 160  # unet input size
 
 DF = pd.read_csv(config.glb_base_dir + '/train_wkt_v4.csv')
 GS = pd.read_csv(config.glb_base_dir + '/grid_sizes.csv', names=['ImageId', 'Xmax', 'Ymin'], skiprows=1)
@@ -172,7 +172,7 @@ def build_and_display_thumbs_from_image_list(image_list: []):
     plt.show()
 
 
-def get_unet_160():
+def get_unet():
     inputs = Input((IMAGE_DEPTH, ISZ, ISZ))
 
     conv1 = Convolution2D(32, 3, 3, activation='relu', border_mode='same')(inputs)
@@ -218,7 +218,7 @@ def get_unet_160():
     return unet_model
 
 
-def get_unet():
+def get_unet_320():
     inputs = Input((IMAGE_DEPTH, ISZ, ISZ))
 
     conv1 = Convolution2D(32, 3, 3, activation='relu', border_mode='same')(inputs)
@@ -296,7 +296,8 @@ def train_net(train_image_db, train_set_size=6400, val_set_size=1000, num_epochs
     print('compiling model...')
     train_model = get_unet()
     print('complete.')
-    model_checkpoint = ModelCheckpoint('weights/unet_tmp.hdf5', monitor='loss', save_best_only=True)
+    model_checkpoint = ModelCheckpoint(config.glb_base_dir + '/weights/unet_tmp.hdf5',
+                                       monitor='loss', save_best_only=True)
 
     train_model.fit_generator(fit_train_data_generator(train_image_db, local_batch_size),
                               samples_per_epoch=samples_per_epoch, nb_epoch=num_epochs,
@@ -401,50 +402,57 @@ def check_predict(image_id, feature_id, pred_model, thresh, img_resize):
 
 
 if __name__ == '__main__':
-    build_train_and_val = True
-    do_training = True
+    build_train_db = True
+    do_training = False
     build_masks_and_submissions = True
     generate_jaccard = True
+    display_training_data = False
 
-    print('Begin v0.0.10')
+    print('Begin v0.0.19')
 
-    image_db = TrainingDB()
-    image_db.build_training_db(IMAGE_SF,  sorted(DF.ImageId.unique()), N_Cls)
-    build_and_display_thumbs_from_image_list(image_db.x)
-    build_and_display_thumbs_from_image_list([img[:, :, 0:3] for img in image_db.y])
+    if build_train_db:
+        image_db = TrainingDB()
+        image_db.build_training_db(IMAGE_SF,  sorted(DF.ImageId.unique()), N_Cls)
+        if display_training_data:
+            build_and_display_thumbs_from_image_list(image_db.x)
+            build_and_display_thumbs_from_image_list([img[:, :, 0:3] for img in image_db.y])
+            build_and_display_thumbs_from_image_list([img[:, :, 3:6] for img in image_db.y])
+    else:
+        image_db = None
+
     # image_db.compute_balance_thresh(10000)
-    #p_x, p_y = image_db.get_random_patchs(10000, ISZ, [0.0]*N_Cls)
-    #image_db.print_mask_stats(p_y)
-    #p_x, p_y = image_db.get_random_patchs(10000, ISZ)
-    #image_db.print_mask_stats(p_y)
+    # p_x, p_y = image_db.get_random_patchs(10000, ISZ, [0.0]*N_Cls)
+    # image_db.print_mask_stats(p_y)
+    # p_x, p_y = image_db.get_random_patchs(10000, ISZ)
+    # image_db.print_mask_stats(p_y)
     # build_and_display_thumbs_from_image_matrix(p_x)
     # build_and_display_thumbs_from_image_matrix(p_y[:, 0:3, :, :])
 
     if do_training:
-        model = train_net(image_db, train_set_size=64*200, val_set_size=5000, num_epochs=20)
-        img_val, msk_val = image_db.get_random_patchs(5000, ISZ)
+        model = train_net(image_db, train_set_size=64*5, val_set_size=50, num_epochs=1)
+        img_val, msk_val = image_db.get_random_patchs(50, ISZ)
         score, trs = jaccard_tools.calc_jaccard(model, img_val, msk_val)
     else:
         print('loading model')
         model = get_unet()
-        model.load_weights('weights/unet_10_jk_0.8503.mdw')
+        model.load_weights(config.glb_base_dir + '/weights/unet_tmp.hdf5')
         if generate_jaccard:
-            img_val, msk_val = image_db.get_random_patchs(5000, ISZ)
+            img_val, msk_val = image_db.get_random_patchs(50, ISZ)
             score, trs = jaccard_tools.calc_jaccard(model, img_val, msk_val)
             print('saving thresholds and score')
-            pickle.dump(trs, open('weights/thresh.pickle', 'wb'))
-            pickle.dump(score, open('weights/score.pickle', 'wb'))
+            pickle.dump(trs, open(config.glb_base_dir + '/weights/thresh.pickle', 'wb'))
+            pickle.dump(score, open(config.glb_base_dir + '/weights/score.pickle', 'wb'))
         else:
             print('loading thresholds and score')
-            trs = pickle.load(open('weights/thresh.pickle', 'rb'))
-            score = pickle.load(open('weights/score.pickle', 'rb'))
+            trs = pickle.load(open(config.glb_base_dir + '/weights/thresh.pickle', 'rb'))
+            score = pickle.load(open(config.glb_base_dir + '/weights/score.pickle', 'rb'))
         print('score', score)
         print('thresholds', trs)
 
     if build_masks_and_submissions:
-        mask_dir_name = 'msk'
-        predict_and_write_masks(model, trs, mask_dir_name, IMAGE_MIN_SIZE)
-        make_submission_file_from_masks(mask_dir_name, sub_file_name='subm/sub_new_v0.csv')
+        mask_dir_name = config.glb_base_dir + '/msk'
+        predict_and_write_masks(model, trs, mask_dir_name, IMAGE_SF)
+        make_submission_file_from_masks(mask_dir_name, sub_file_name=config.glb_base_dir + '/subm/sub_new_v0.csv')
 
     # bonus
     check_predict('6100_0_2', 3, model, trs, IMAGE_MIN_SIZE)
