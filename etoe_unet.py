@@ -1,3 +1,7 @@
+"""
+    Main Satellite training a testing code.
+    ver 0.0.4
+"""
 import matplotlib.pyplot as plt
 import pandas as pd
 import numpy as np
