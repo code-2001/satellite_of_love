@@ -30,7 +30,7 @@ SB = pd.read_csv(os.path.join(config.glb_base_dir, 'sample_submission.csv'))
 
 IMAGE_DEPTH = 3  # 8 for image M, 20 for all, 3 for 3-band
 
-NET_SIZE_MULT = 6  # 6 is baseline
+NET_SIZE_MULT = 8  # 6 is baseline
 NET_FIELD_SIZE = ISZ * NET_SIZE_MULT
 MAX_IMAGE_SIZE = 3403
 MIN_IMAGE_SIZE = 3335
@@ -299,7 +299,7 @@ def train_net(train_image_db, train_set_size=6400, val_set_size=1000, num_epochs
             yield x_trn, y_trn
 
     print('*** train_net: using', num_epochs, 'epochs with', train_set_size, 'samples per epoch',
-          'training size', train_set_size, 'valadiation set size', val_set_size, 'number of epochs', num_epochs,
+          'validation set size', val_set_size, 'number of epochs', num_epochs,
           'batch size', train_batch_size)
 
     train_model = get_unet()
@@ -463,7 +463,7 @@ def calculate_optimum_binary_thresholds(train_model_db, train_model, calc_size=0
 
 if __name__ == '__main__':
     build_train_db = True
-    do_training = False
+    do_training = True
     build_masks_and_submissions = True
     generate_jaccard = True
     display_training_data = False
@@ -489,7 +489,8 @@ if __name__ == '__main__':
     # build_and_display_thumbs_from_image_matrix(p_y[:, 0:3, :, :])
 
     if do_training:
-        model = train_net(image_db, train_set_size=64*200, val_set_size=5000, num_epochs=30, train_batch_size=16)
+        model = train_net(image_db, train_set_size=16*1000, val_set_size=10000, num_epochs=50, train_batch_size=16)
+        model.save(config.glb_base_dir + '/weights/model_now.modx')
         img_val, msk_val = image_db.get_random_patchs(2500, ISZ)
         score, trs = jaccard_tools.calc_jaccard(model, img_val, msk_val)
     else:
