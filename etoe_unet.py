@@ -1,6 +1,6 @@
 """
     Main Satellite training a testing code.
-    version: submission for sub_ep25_train12800_val5000_algoFitGen_autoscaleTo960via160x6.csv
+    version: submission for sub_ep30_train12800_unet320_autoscaleTo320x6_v2.csv.csv, lb score = 0.26846
 """
 import matplotlib.pyplot as plt
 import pandas as pd
@@ -45,10 +45,15 @@ class TrainingDB:
         self.x = []
         self.y = []
 
-    def build_training_db(self, image_sf, train_image_ids, num_class):
+    def build_training_db(self, image_sf, train_image_ids, num_class, subset_size=0):
+        if subset_size == 0:
+            train_image_id_list = train_image_ids
+        else:
+            train_image_id_list = train_image_ids[:subset_size]
+
         train_image_list = []
         train_mask_list = []
-        for i, idx in enumerate(train_image_ids):
+        for i, idx in enumerate(train_image_id_list):
             # get images for this image id
             img_mat = image_source.get_image_from_id(idx, image_sf)
             img_mat = image_source.stretch_n(img_mat)
@@ -58,7 +63,7 @@ class TrainingDB:
                 image_mask[:, :, z] = polygon_tools.generate_mask_for_image_and_class(
                     (img_mat.shape[0], img_mat.shape[1]), idx, z + 1, GS, DF)
             train_mask_list.append(image_mask)
-            print('{}/{}'.format(i+1, len(train_image_ids)), idx, 'shapes:', img_mat.shape, image_mask.shape)
+            print('{}/{}'.format(i+1, len(train_image_id_list)), idx, 'shapes:', img_mat.shape, image_mask.shape)
         self.x = train_image_list
         self.y = train_mask_list
 
@@ -339,6 +344,28 @@ def predict_id(image_id, pred_model, mask_thresh_vec, image_sf):
     return prd[:, :img_mat.shape[0], :img_mat.shape[1]]
 
 
+def map_image_to_probability_matrix(img_mat, pred_model):
+    # x = image_source.stretch_n(img_mat)
+
+    field_size = ISZ * NET_SIZE_MULT
+
+    cnv = np.zeros((field_size, field_size, IMAGE_DEPTH)).astype(np.float32)
+    prd = np.zeros((N_Cls, field_size, field_size)).astype(np.float32)
+    cnv[:img_mat.shape[0], :img_mat.shape[1], :] = img_mat
+
+    for i in range(0, NET_SIZE_MULT):
+        line = []
+        for j in range(0, NET_SIZE_MULT):
+            line.append(cnv[i * ISZ:(i + 1) * ISZ, j * ISZ:(j + 1) * ISZ])
+
+        x = 2 * np.transpose(line, (0, 3, 1, 2)) - 1
+        tmp = pred_model.predict(x, batch_size=4)
+        for j in range(tmp.shape[0]):
+            prd[:, i * ISZ:(i + 1) * ISZ, j * ISZ:(j + 1) * ISZ] = tmp[j]
+
+    return prd[:, :img_mat.shape[0], :img_mat.shape[1]]
+
+
 def predict_and_write_masks(prediction_model, mask_thresh_vec, mask_dir, image_sf):
     print('*** predict and write masks...')
     img_list_len = len(set(SB['ImageId'].tolist()))
@@ -404,9 +431,39 @@ def check_predict(image_id, feature_id, pred_model, thresh, img_resize):
     plt.show()
 
 
+def calculate_optimum_binary_thresholds(train_model_db, train_model, calc_size=0):
+    if calc_size == 0:
+        calc_size = len(train_model_db.x)
+
+    num_thresh = 10
+    num_class = train_model_db.y[0].shape[2]
+    best_jacc = np.zeros(num_class)
+    best_thresh = np.zeros(num_class)
+
+    for idx in range(calc_size):
+        y_pred_3d = map_image_to_probability_matrix(train_model_db.x[idx], train_model)
+        y_pred_3d = np.rollaxis(y_pred_3d, 0, 3)
+        y_true_3d = train_model_db.y[idx]
+        print(idx, 'y_pred shape', y_pred_3d.shape, 'y_true shape', y_true_3d.shape)
+
+        for ic in range(num_class):
+            y_pred = y_pred_3d[:, :, ic]
+            y_true = y_true_3d[:, :, ic]
+            for j in range(10):
+                thresh = float(j) / num_thresh
+                y_pred_thresh = y_pred > thresh
+                jacc = jaccard_tools.jaccard_similarity_score(y_true, y_pred_thresh)
+                if jacc > best_jacc[ic]:
+                    best_jacc[ic] = jacc
+                    best_thresh[ic] = thresh
+                print(idx, ic, thresh, 'jacc', jacc, best_jacc[ic], best_thresh[ic])
+    score = np.average(best_jacc)
+    return score, best_thresh
+
+
 if __name__ == '__main__':
     build_train_db = True
-    do_training = True
+    do_training = False
     build_masks_and_submissions = True
     generate_jaccard = True
     display_training_data = False
@@ -415,7 +472,7 @@ if __name__ == '__main__':
 
     if build_train_db:
         image_db = TrainingDB()
-        image_db.build_training_db(IMAGE_SF,  sorted(DF.ImageId.unique()), N_Cls)
+        image_db.build_training_db(IMAGE_SF,  sorted(DF.ImageId.unique()), N_Cls, subset_size=0)
         if display_training_data:
             build_and_display_thumbs_from_image_list(image_db.x)
             build_and_display_thumbs_from_image_list([img[:, :, 0:3] for img in image_db.y])
@@ -433,14 +490,15 @@ if __name__ == '__main__':
 
     if do_training:
         model = train_net(image_db, train_set_size=64*200, val_set_size=5000, num_epochs=30, train_batch_size=16)
-        img_val, msk_val = image_db.get_random_patchs(5000, ISZ)
+        img_val, msk_val = image_db.get_random_patchs(2500, ISZ)
         score, trs = jaccard_tools.calc_jaccard(model, img_val, msk_val)
     else:
         print('loading model')
         model = get_unet()
-        model.load_weights(config.glb_base_dir + '/weights/unet_tmp.hdf5')
+        model.load_weights(config.glb_base_dir + '/weights/unet_tmp_epoch28.hdf5')
         if generate_jaccard:
-            img_val, msk_val = image_db.get_random_patchs(5000, ISZ)
+            #score, trs = calculate_optimum_binary_thresholds(image_db, model, calc_size=0)
+            img_val, msk_val = image_db.get_random_patchs(2500, ISZ)
             score, trs = jaccard_tools.calc_jaccard(model, img_val, msk_val)
             print('saving thresholds and score')
             pickle.dump(trs, open(config.glb_base_dir + '/weights/thresh.pickle', 'wb'))
