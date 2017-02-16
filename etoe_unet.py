@@ -304,8 +304,8 @@ def train_net(train_image_db, train_set_size=6400, val_set_size=1000, num_epochs
 
     train_model = get_unet()
 
-    model_checkpoint = ModelCheckpoint(config.glb_base_dir + '/weights/unet_tmp.hdf5',
-                                       monitor='loss', save_best_only=True)
+    filepath = config.glb_base_dir + "/weights/" + "model-{epoch:02d}-{val_loss:.5f}.hdf5"
+    model_checkpoint = ModelCheckpoint(filepath, monitor='loss', save_best_only=False, verbose=1)
     print('begin fit_generator...')
     train_model.fit_generator(fit_train_data_generator(train_image_db, train_batch_size),
                               samples_per_epoch=train_set_size, nb_epoch=num_epochs,
@@ -457,8 +457,8 @@ def calculate_optimum_binary_thresholds(train_model_db, train_model, calc_size=0
                     best_jacc[ic] = jacc
                     best_thresh[ic] = thresh
                 print(idx, ic, thresh, 'jacc', jacc, best_jacc[ic], best_thresh[ic])
-    score = np.average(best_jacc)
-    return score, best_thresh
+    j_score = np.average(best_jacc)
+    return j_score, best_thresh
 
 
 if __name__ == '__main__':
@@ -498,7 +498,7 @@ if __name__ == '__main__':
         model = get_unet()
         model.load_weights(config.glb_base_dir + '/weights/unet_tmp_epoch28.hdf5')
         if generate_jaccard:
-            #score, trs = calculate_optimum_binary_thresholds(image_db, model, calc_size=0)
+            # score, trs = calculate_optimum_binary_thresholds(image_db, model, calc_size=0)
             img_val, msk_val = image_db.get_random_patchs(2500, ISZ)
             score, trs = jaccard_tools.calc_jaccard(model, img_val, msk_val)
             print('saving thresholds and score')
