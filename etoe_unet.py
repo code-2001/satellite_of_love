@@ -344,6 +344,64 @@ def predict_id(image_id, pred_model, mask_thresh_vec, image_sf):
     return prd[:, :img_mat.shape[0], :img_mat.shape[1]]
 
 
+def predict_image_using_padding(img_mat, pred_model, pad_size):
+    # get dimensions
+    rows = img_mat.shape[0]
+    cols = img_mat.shape[1]
+    depth = img_mat.shape[2]
+    num_class = pred_model.output_shape[1]
+    isz = pred_model.input_shape[2]
+    new_isz = isz - 2 * pad_size
+    delta = new_isz  # this is the size of the valid output of predict,
+
+    new_rows = isz * math.ceil((rows+2*pad_size) / isz)
+    new_cols = isz * math.ceil((cols+2*pad_size) / isz)
+
+    # create arrays for input to predict
+    conv = np.zeros((new_rows, new_cols, depth), np.float32)
+    conv[pad_size:pad_size+rows, pad_size:pad_size+cols, :] = img_mat
+
+    net_rows = math.ceil(conv.shape[0] / isz)
+    net_cols = math.ceil(conv.shape[1] / isz)
+    pred_rows = new_isz * net_rows
+    pred_cols = new_isz * net_cols
+
+    # create output image
+    pred = np.zeros((num_class, pred_rows, pred_cols), np.float32)
+
+    # create x to hold all sub-images for prediction
+    k = 0
+    istart = pad_size
+    x = np.zeros((net_rows*net_cols, isz, isz, depth), np.float32)
+    for i in range(0, net_rows):
+        jstart = pad_size
+        for j in range(0, net_cols):
+            print(i,j,'[',istart,':',istart+isz,',',jstart,':',jstart+isz,']')
+            x[k, :, :, :] = conv[istart:istart+isz, jstart:jstart+isz, :]
+            k += 1
+            jstart += delta
+        istart += delta
+
+    # transpose all patches for prediction
+    x_t = 2 * np.transpose(x, (0, 3, 1, 2)) - 1
+
+    # predict patches
+    y = pred_model.predict(x_t, batch_size=16)
+
+    # rebuild image from predicted patches
+    k = 0
+    istart = 0
+    for i in range(0, net_rows):
+        jstart = 0
+        for j in range(0, net_cols):
+            pred[:, istart:istart+new_isz, jstart:jstart+new_isz] = y[k, :, pad_size:pad_size+new_isz, pad_size:pad_size+new_isz]
+            k += 1
+            jstart += delta
+        istart += delta
+
+    # return an image of the same size as the input
+    return pred[:, :img_mat.shape[0], :img_mat.shape[1]]
+
 def map_image_to_probability_matrix(img_mat, pred_model):
     # x = image_source.stretch_n(img_mat)
 
@@ -462,8 +520,8 @@ def calculate_optimum_binary_thresholds(train_model_db, train_model, calc_size=0
 
 
 if __name__ == '__main__':
-    build_train_db = True
-    do_training = True
+    build_train_db = False
+    do_training = False
     build_masks_and_submissions = True
     generate_jaccard = True
     display_training_data = False
@@ -496,7 +554,13 @@ if __name__ == '__main__':
     else:
         print('loading model')
         model = get_unet()
-        model.load_weights(config.glb_base_dir + '/weights/unet_tmp_epoch28.hdf5')
+        model.load_weights(config.glb_base_dir + '/weights/model-15-0.02878.hdf5')
+
+        # test
+        image_id = '6120_2_2'
+        img_mat = image_source.get_image_from_id(image_id, IMAGE_SF)
+        x = image_source.stretch_n(img_mat)
+        y_p = predict_image_using_padding(x, model, 16)
         if generate_jaccard:
             # score, trs = calculate_optimum_binary_thresholds(image_db, model, calc_size=0)
             img_val, msk_val = image_db.get_random_patchs(2500, ISZ)
