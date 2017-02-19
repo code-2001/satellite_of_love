@@ -21,7 +21,7 @@ import image_source
 import polygon_tools
 
 N_Cls = 10
-ISZ = 320  # unet input size, 160 baseline
+ISZ = 160  # unet input size, 160 baseline
 
 DF = pd.read_csv(config.glb_base_dir + '/train_wkt_v4.csv')
 GS = pd.read_csv(config.glb_base_dir + '/grid_sizes.csv', names=['ImageId', 'Xmax', 'Ymin'], skiprows=1)
@@ -30,7 +30,7 @@ SB = pd.read_csv(os.path.join(config.glb_base_dir, 'sample_submission.csv'))
 
 IMAGE_DEPTH = 3  # 8 for image M, 20 for all, 3 for 3-band
 
-NET_SIZE_MULT = 8  # 6 is baseline
+NET_SIZE_MULT = 6  # 6 is baseline
 NET_FIELD_SIZE = ISZ * NET_SIZE_MULT
 MAX_IMAGE_SIZE = 3403
 MIN_IMAGE_SIZE = 3335
@@ -189,6 +189,7 @@ def build_and_display_thumbs_from_image_list(image_list: []):
     plt.show()
 
 
+# unet 160
 def get_unet_160():
     inputs = Input((IMAGE_DEPTH, ISZ, ISZ))
 
@@ -235,7 +236,55 @@ def get_unet_160():
     return unet_model
 
 
+# unet 160x2
 def get_unet():
+    inputs = Input((IMAGE_DEPTH, ISZ, ISZ))
+
+    conv1 = Convolution2D(64, 3, 3, activation='relu', border_mode='same')(inputs)
+    conv1 = Convolution2D(64, 3, 3, activation='relu', border_mode='same')(conv1)
+    pool1 = MaxPooling2D(pool_size=(2, 2))(conv1)
+
+    conv2 = Convolution2D(128, 3, 3, activation='relu', border_mode='same')(pool1)
+    conv2 = Convolution2D(128, 3, 3, activation='relu', border_mode='same')(conv2)
+    pool2 = MaxPooling2D(pool_size=(2, 2))(conv2)
+
+    conv3 = Convolution2D(256, 3, 3, activation='relu', border_mode='same')(pool2)
+    conv3 = Convolution2D(256, 3, 3, activation='relu', border_mode='same')(conv3)
+    pool3 = MaxPooling2D(pool_size=(2, 2))(conv3)
+
+    conv4 = Convolution2D(512, 3, 3, activation='relu', border_mode='same')(pool3)
+    conv4 = Convolution2D(512, 3, 3, activation='relu', border_mode='same')(conv4)
+    pool4 = MaxPooling2D(pool_size=(2, 2))(conv4)
+
+    conv5 = Convolution2D(1024, 3, 3, activation='relu', border_mode='same')(pool4)
+    conv5 = Convolution2D(1024, 3, 3, activation='relu', border_mode='same')(conv5)
+
+    up6 = merge([UpSampling2D(size=(2, 2))(conv5), conv4], mode='concat', concat_axis=1)
+    conv6 = Convolution2D(512, 3, 3, activation='relu', border_mode='same')(up6)
+    conv6 = Convolution2D(512, 3, 3, activation='relu', border_mode='same')(conv6)
+
+    up7 = merge([UpSampling2D(size=(2, 2))(conv6), conv3], mode='concat', concat_axis=1)
+    conv7 = Convolution2D(256, 3, 3, activation='relu', border_mode='same')(up7)
+    conv7 = Convolution2D(256, 3, 3, activation='relu', border_mode='same')(conv7)
+
+    up8 = merge([UpSampling2D(size=(2, 2))(conv7), conv2], mode='concat', concat_axis=1)
+    conv8 = Convolution2D(128, 3, 3, activation='relu', border_mode='same')(up8)
+    conv8 = Convolution2D(128, 3, 3, activation='relu', border_mode='same')(conv8)
+
+    up9 = merge([UpSampling2D(size=(2, 2))(conv8), conv1], mode='concat', concat_axis=1)
+    conv9 = Convolution2D(64, 3, 3, activation='relu', border_mode='same')(up9)
+    conv9 = Convolution2D(64, 3, 3, activation='relu', border_mode='same')(conv9)
+
+    conv10 = Convolution2D(N_Cls, 1, 1, activation='sigmoid')(conv9)
+
+    unet_model = Model(input=inputs, output=conv10)
+    unet_model.compile(optimizer=Adam(), loss='binary_crossentropy',
+                       metrics=[jaccard_tools.jaccard_coef, jaccard_tools.jaccard_coef_int, 'accuracy'])
+    return unet_model
+
+
+# unet 320
+def get_unet_320():
     inputs = Input((IMAGE_DEPTH, ISZ, ISZ))
 
     conv1 = Convolution2D(32, 3, 3, activation='relu', border_mode='same')(inputs)
@@ -455,7 +504,7 @@ def predict_and_write_masks(prediction_model, mask_thresh_vec, mask_dir, image_s
     for i, idx in enumerate(sorted(set(SB['ImageId'].tolist()))):
         img_mat = image_source.get_image_from_id(idx, image_sf)
         img_mat = image_source.stretch_n(img_mat)
-        pred_prob = predict_image_using_padding(img_mat, prediction_model, pad_size=16)
+        pred_prob = predict_image_using_padding(img_mat, prediction_model, pad_size=4)
         pred_mask = threshold_prob_mask(pred_prob, mask_thresh_vec)
         np.save(mask_dir + '/msk_%s' % idx, pred_mask)
         if i % 50 == 0:
@@ -594,9 +643,9 @@ def calculate_optimum_binary_thresholds(train_model_db, train_model, calc_size=0
 
 if __name__ == '__main__':
     build_train_db = True
-    do_training = False
+    do_training = True
     build_masks_and_submissions = True
-    generate_jaccard = True
+    generate_jaccard = True  # only needed if do_train==False
     display_training_data = False
 
     print('Begin v0.0.22')
