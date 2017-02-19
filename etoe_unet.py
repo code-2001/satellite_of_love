@@ -299,11 +299,11 @@ def get_scalers(im_size, x_max, y_min):
     return w_ / x_max, h_ / y_min
 
 
-def train_net(train_image_db, train_set_size=6400, val_set_size=1000, num_epochs=1, train_batch_size=64):
+def train_net(train_image_db: TrainingDB, train_set_size=6400, val_set_size=1000, num_epochs=1, train_batch_size=64):
 
     def fit_train_data_generator(train_gen_db, gen_batch_size):
         while True:
-            x_trn, y_trn = train_gen_db.get_random_patchs(gen_batch_size, ISZ)
+            x_trn, y_trn = train_gen_db.get_random_patches(gen_batch_size, ISZ)
             yield x_trn, y_trn
 
     print('*** train_net: using', num_epochs, 'epochs with', train_set_size, 'samples per epoch',
@@ -442,9 +442,10 @@ def map_image_to_probability_matrix(img_mat, pred_model):
 
 
 def threshold_prob_mask(prob_mat, mask_thresh_vec):
-    prob_mask = np.zeros(prob_mat.shape, np.uint8)
+    prob_mask = np.zeros(prob_mat.shape, np.float32)
     for i in range(len(mask_thresh_vec)):
         prob_mask[i, :, :] = prob_mat[i, :, :] > mask_thresh_vec[i]
+    prob_mask = prob_mask.astype(np.uint8)
     return prob_mask
 
 
@@ -478,6 +479,7 @@ def make_submission_file_from_masks(mask_dir, sub_file_name):
         img_msk = img_msk_all[kls]
 
         pred_polygons = polygon_tools.mask_to_polygons(img_msk, epsilon=5, min_area=1.0)
+
         x_max = GS.loc[GS['ImageId'] == img_id, 'Xmax'].as_matrix()[0]
         y_min = GS.loc[GS['ImageId'] == img_id, 'Ymin'].as_matrix()[0]
 
@@ -500,7 +502,7 @@ def check_predict(image_id, feature_id, pred_model, thresh, image_sf):
     img_mat = image_source.get_image_from_id(image_id, image_sf)
     img_mat = image_source.stretch_n(img_mat)
 
-    gt_mask = TrainingDB.get_training_mask(image_id, img_mat, 10)
+    # gt_mask = TrainingDB.get_training_mask(image_id, img_mat, 10)
 
     pred_prob = predict_image_using_padding(img_mat, pred_model, pad_size=16)
     print('pred_prob shape', pred_prob.shape)
@@ -518,11 +520,44 @@ def check_predict(image_id, feature_id, pred_model, thresh, image_sf):
     ax3.set_title('predict bldg polygons')
     ax3.imshow(polygon_tools.mask_for_polygons(polygon_tools.mask_to_polygons(pred_mask[feature_id, :, :], epsilon=1),
                                                img_mat.shape[:2]), cmap=plt.get_cmap('gray'))
+    # ax4 = plt.subplot(2, 2, 4)
+    # ax4.set_title('ground truth')
+    # tf_mask = gt_mask == pred_mask
+    # print('error count', np.sum(gt_mask[:, :, feature_id] != pred_mask[feature_id, :, :]))
+    # ax4.imshow(gt_mask[:, :, feature_id])
+
+    plt.show()
+
+
+def check_predict_2(prediction_model, mask_thresh_vec, image_id, feature_id, mask_dir, image_sf):
+    img_mat = image_source.get_image_from_id(image_id, image_sf)
+    img_mat = image_source.stretch_n(img_mat)
+
+    pred_prob = predict_image_using_padding(img_mat, prediction_model, pad_size=16)
+    pred_mask0 = threshold_prob_mask(pred_prob, mask_thresh_vec)
+    np.save(mask_dir + '/msk_%s' % image_id, pred_mask0)
+
+    pred_mask = np.load(mask_dir + '/msk_%s.npy' % image_id)
+    print('pred_mask shape', pred_mask.shape)
+
+    plt.figure()
+    ax1 = plt.subplot(2, 2, 1)
+    ax1.set_title('image ID:' + image_id)
+    ax1.imshow(img_mat[:, :, :], cmap=plt.get_cmap('gist_ncar'))
+
+    ax2 = plt.subplot(2, 2, 2)
+    ax2.set_title('predict bldg pixels')
+    ax2.imshow(pred_mask[feature_id, :, :], cmap=plt.get_cmap('gray'))
+
+    ax3 = plt.subplot(2, 2, 3)
+    ax3.set_title('predict bldg polygons')
+    ax3.imshow(polygon_tools.mask_for_polygons(polygon_tools.mask_to_polygons(pred_mask[feature_id, :, :], epsilon=1),
+                                               img_mat.shape[:2]), cmap=plt.get_cmap('gray'))
     ax4 = plt.subplot(2, 2, 4)
     ax4.set_title('ground truth')
     # tf_mask = gt_mask == pred_mask
-    print('error count', np.sum(gt_mask[feature_id, :, :] != pred_mask[feature_id, :, :]))
-    ax4.imshow(gt_mask[:, :, feature_id])
+    # print('error count', np.sum(gt_mask[:, :, feature_id] != pred_mask[feature_id, :, :]))
+    # ax4.imshow(gt_mask[:, :, feature_id])
 
     plt.show()
 
@@ -558,13 +593,13 @@ def calculate_optimum_binary_thresholds(train_model_db, train_model, calc_size=0
 
 
 if __name__ == '__main__':
-    build_train_db = False
+    build_train_db = True
     do_training = False
-    build_masks_and_submissions = False
-    generate_jaccard = False
+    build_masks_and_submissions = True
+    generate_jaccard = True
     display_training_data = False
 
-    print('Begin v0.0.21')
+    print('Begin v0.0.22')
 
     if build_train_db:
         image_db = TrainingDB()
@@ -576,14 +611,6 @@ if __name__ == '__main__':
     else:
         image_db = None
 
-    # image_db.compute_balance_thresh(10000)
-    # p_x, p_y = image_db.get_random_patchs(10000, ISZ, [0.0]*N_Cls)
-    # image_db.print_mask_stats(p_y)
-    # p_x, p_y = image_db.get_random_patchs(10000, ISZ)
-    # image_db.print_mask_stats(p_y)
-    # build_and_display_thumbs_from_image_matrix(p_x)
-    # build_and_display_thumbs_from_image_matrix(p_y[:, 0:3, :, :])
-
     if do_training:
         model = train_net(image_db, train_set_size=16*1000, val_set_size=10000, num_epochs=50, train_batch_size=16)
         model.save(config.glb_base_dir + '/weights/model_now.modx')
@@ -592,7 +619,7 @@ if __name__ == '__main__':
     else:
         print('loading model')
         model = get_unet()
-        model.load_weights(config.glb_base_dir + '/weights/model-15-0.02878.hdf5')
+        model.load_weights(config.glb_base_dir + '/weights/model-17-0.02772.hdf5')
         if generate_jaccard:
             # score, trs = calculate_optimum_binary_thresholds(image_db, model, calc_size=0)
             img_val, msk_val = image_db.get_random_patches(2500, ISZ)
@@ -613,4 +640,7 @@ if __name__ == '__main__':
         make_submission_file_from_masks(mask_dir_name, sub_file_name=config.glb_base_dir + '/subm/sub_new_v0.csv')
 
     # bonus
-    check_predict('6120_2_2', 0, model, trs, IMAGE_SF)
+    check_image_id = '6120_2_2'
+    # check_predict(check_image_id, 0, model, trs, IMAGE_SF)
+    mask_dir_name = config.glb_base_dir + '/msk'
+    check_predict_2(model, trs, check_image_id, 0, mask_dir_name, IMAGE_SF)
