@@ -28,7 +28,7 @@ GS = pd.read_csv(config.glb_base_dir + '/grid_sizes.csv', names=['ImageId', 'Xma
 SB = pd.read_csv(os.path.join(config.glb_base_dir, 'sample_submission.csv'))
 
 
-IMAGE_DEPTH = 3  # 8 for image M, 20 for all, 3 for 3-band
+IMAGE_DEPTH = 4  # 8 for image M, 20 for all, 3 for 3-band
 
 NET_SIZE_MULT = 6  # 6 is baseline
 NET_FIELD_SIZE = ISZ * NET_SIZE_MULT
@@ -185,7 +185,7 @@ def build_and_display_thumbs_from_image_list(image_list: []):
                 mosaic[ix: ix+n_rows, jx:jx+n_cols, :] = image_list[k]
             k += 1
     # display it
-    plt.imshow(mosaic)
+    plt.imshow(mosaic[:, :, 1:4])
     plt.show()
 
 
@@ -646,7 +646,7 @@ if __name__ == '__main__':
     do_training = True
     build_masks_and_submissions = True
     generate_jaccard = True  # only needed if do_train==False
-    display_training_data = False
+    display_training_data = True
 
     print('Begin v0.0.22')
 
@@ -655,8 +655,8 @@ if __name__ == '__main__':
         image_db.build_training_db(IMAGE_SF,  sorted(DF.ImageId.unique()), N_Cls, subset_size=0)
         if display_training_data:
             build_and_display_thumbs_from_image_list(image_db.x)
-            build_and_display_thumbs_from_image_list([img[:, :, 0:3] for img in image_db.y])
-            build_and_display_thumbs_from_image_list([img[:, :, 3:6] for img in image_db.y])
+            # build_and_display_thumbs_from_image_list([img[:, :, 0:3] for img in image_db.y])
+            # build_and_display_thumbs_from_image_list([img[:, :, 3:6] for img in image_db.y])
     else:
         image_db = None
 
