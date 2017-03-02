@@ -1,4 +1,4 @@
 # satellite_of_love
-object recognition within satellite images 
+Development directory for object recognition within satellite images. 
 
-etoe_net.py - run this file to classify images
+etoe_unet.py - run this file to classify images
